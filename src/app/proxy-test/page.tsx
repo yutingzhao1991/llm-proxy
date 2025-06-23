@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 
 export default function ProxyTestPage() {
   const [targetUrl, setTargetUrl] = useState('');
@@ -9,7 +9,127 @@ export default function ProxyTestPage() {
   const [model, setModel] = useState('gpt-3.5-turbo');
   const [response, setResponse] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [showRawData, setShowRawData] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
+  // 流式响应处理
+  const testStreamingProxy = async () => {
+    if (!targetUrl) {
+      alert('请输入目标API URL');
+      return;
+    }
+
+    setLoading(true);
+    setResponse('');
+    
+    // 创建新的AbortController用于取消请求
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'x-target-url': targetUrl,
+      };
+
+      if (apiKey) {
+        headers['Authorization'] = `Bearer ${apiKey}`;
+      }
+
+      const requestBody = {
+        model: model,
+        messages: [
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        stream: true
+      };
+
+      const res = await fetch('/api/v1/chat/completions', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody),
+        signal: abortControllerRef.current.signal,
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        setResponse(`错误 ${res.status}: ${JSON.stringify(errorData, null, 2)}`);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        setResponse('错误: 无法读取响应流');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullResponse = '';
+      let assistantMessage = '';
+      let rawData = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        rawData += chunk;
+        
+        // 处理缓冲区中的完整行
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // 保留不完整的行
+        
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          
+          if (trimmedLine === '') continue;
+          if (trimmedLine === 'data: [DONE]') continue;
+          if (!trimmedLine.startsWith('data: ')) continue;
+          
+          try {
+            const jsonStr = trimmedLine.slice(6); // 移除 'data: ' 前缀
+            const data = JSON.parse(jsonStr);
+            
+            // 提取消息内容
+            if (data.choices && data.choices[0] && data.choices[0].delta) {
+              const delta = data.choices[0].delta;
+              if (delta.content) {
+                assistantMessage += delta.content;
+              }
+            }
+          } catch (e) {
+            console.warn('解析SSE数据失败:', trimmedLine, e);
+          }
+        }
+        
+        // 根据显示模式更新内容
+        if (showRawData) {
+          fullResponse = `=== 原始流式数据 ===\n${rawData}\n\n=== 提取的消息内容 ===\n${assistantMessage}`;
+        } else {
+          fullResponse = assistantMessage || '等待响应...';
+        }
+        setResponse(fullResponse);
+      }
+
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        setResponse(prev => prev + '\n\n[请求已取消]');
+      } else {
+        setResponse(`错误: ${error.message || error}`);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 非流式响应处理
   const testProxy = async () => {
     if (!targetUrl) {
       alert('请输入目标API URL');
@@ -37,7 +157,8 @@ export default function ProxyTestPage() {
             content: prompt
           }
         ],
-        temperature: 0.7
+        temperature: 0.7,
+        stream: false
       };
 
       const res = await fetch('/api/v1/chat/completions', {
@@ -55,6 +176,13 @@ export default function ProxyTestPage() {
     }
   };
 
+  // 取消请求
+  const cancelRequest = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <h1 className="text-3xl font-bold mb-6">LLM 代理接口测试</h1>
@@ -64,6 +192,7 @@ export default function ProxyTestPage() {
         <ul className="list-disc list-inside space-y-1 text-sm">
           <li>本代理接口符合 OpenAI API 规范</li>
           <li>支持转发请求到任何兼容的大模型API</li>
+          <li>支持流式和非流式两种响应模式</li>
           <li>会在控制台日志中记录请求和响应内容</li>
           <li>支持通过环境变量 TARGET_API_URL 或请求头 x-target-url 设置目标地址</li>
         </ul>
@@ -121,19 +250,58 @@ export default function ProxyTestPage() {
             />
           </div>
 
-          <button
-            onClick={testProxy}
-            disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
-          >
-            {loading ? '测试中...' : '测试代理接口'}
-          </button>
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="streaming"
+              checked={isStreaming}
+              onChange={(e) => setIsStreaming(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <label htmlFor="streaming" className="text-sm font-medium">
+              启用流式响应
+            </label>
+          </div>
+
+          {isStreaming && (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="showRawData"
+                checked={showRawData}
+                onChange={(e) => setShowRawData(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <label htmlFor="showRawData" className="text-sm font-medium">
+                显示原始数据
+              </label>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <button
+              onClick={isStreaming ? testStreamingProxy : testProxy}
+              disabled={loading}
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
+            >
+              {loading ? (isStreaming ? '流式测试中...' : '测试中...') : (isStreaming ? '开始流式测试' : '测试代理接口')}
+            </button>
+            
+            {loading && isStreaming && (
+              <button
+                onClick={cancelRequest}
+                className="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700"
+              >
+                取消请求
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-2">
-              响应结果
+              响应结果 {isStreaming ? (showRawData ? '(实时流式显示 - 包含原始数据)' : '(实时流式显示 - 仅消息内容)') : ''}
             </label>
             <textarea
               value={response}
@@ -143,6 +311,13 @@ export default function ProxyTestPage() {
               placeholder="响应内容将显示在这里..."
             />
           </div>
+          
+          <button
+            onClick={() => setResponse('')}
+            className="w-full bg-gray-500 text-white py-2 px-4 rounded-md hover:bg-gray-600"
+          >
+            清空响应
+          </button>
         </div>
       </div>
 
@@ -157,6 +332,7 @@ export default function ProxyTestPage() {
             <li><code>x-target-url: target_api_url</code> (如未设置环境变量)</li>
           </ul>
           <p><strong>请求体:</strong> 符合 OpenAI Chat Completions API 规范</p>
+          <p><strong>流式支持:</strong> 设置 <code>stream: true</code> 启用流式响应</p>
         </div>
       </div>
 
@@ -170,6 +346,17 @@ TARGET_API_URL=https://api.openai.com/v1/chat/completions
 # 默认API密钥 (可选)
 DEFAULT_API_KEY=your_api_key_here`}
         </pre>
+      </div>
+
+      <div className="bg-green-50 p-4 rounded-lg">
+        <h3 className="text-lg font-semibold mb-2">🆕 流式功能特性</h3>
+        <ul className="list-disc list-inside space-y-1 text-sm">
+          <li>✅ 支持实时流式响应显示</li>
+          <li>✅ 保持完整的日志记录（在服务端控制台查看）</li>
+          <li>✅ 支持取消流式请求</li>
+          <li>✅ 兼容 OpenAI 流式 API 格式</li>
+          <li>✅ 自动检测流式/非流式模式</li>
+        </ul>
       </div>
     </div>
   );

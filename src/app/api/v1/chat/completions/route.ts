@@ -20,6 +20,52 @@ function logResponse(status: number, headers: any, body: any) {
   console.log('==================\n');
 }
 
+// 处理流式响应的函数
+async function handleStreamResponse(response: Response, requestBody: any) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('无法读取响应流');
+  }
+
+  const decoder = new TextDecoder();
+  let fullResponse = '';
+  let chunks: string[] = [];
+
+  // 创建一个可读流来转发数据
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            // 记录完整的响应日志
+            logResponse(response.status, Object.fromEntries(response.headers), {
+              stream: true,
+              fullResponse: fullResponse,
+              chunks: chunks
+            });
+            controller.close();
+            break;
+          }
+
+          const chunk = decoder.decode(value);
+          fullResponse += chunk;
+          chunks.push(chunk);
+          
+          // 转发数据块
+          controller.enqueue(value);
+        }
+      } catch (error) {
+        console.error('流式处理错误:', error);
+        controller.error(error);
+      }
+    }
+  });
+
+  return stream;
+}
+
 export async function POST(request: NextRequest) {
   try {
     // 从环境变量或请求头获取目标API URL
@@ -61,29 +107,59 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     });
 
-    const responseData = await response.json();
-    
-    // 构建响应头
-    const responseHeaders = new Headers();
-    responseHeaders.set('Content-Type', 'application/json');
-    
-    // 复制一些重要的响应头
-    const corsHeaders = ['access-control-allow-origin', 'access-control-allow-methods', 'access-control-allow-headers'];
-    corsHeaders.forEach(header => {
-      const value = response.headers.get(header);
-      if (value) {
-        responseHeaders.set(header, value);
-      }
-    });
+    // 检查是否是流式请求
+    if (body.stream === true) {
+      // 处理流式响应
+      const stream = await handleStreamResponse(response, body);
+      
+      // 构建流式响应头
+      const responseHeaders = new Headers();
+      responseHeaders.set('Content-Type', 'text/plain; charset=utf-8');
+      responseHeaders.set('Cache-Control', 'no-cache');
+      responseHeaders.set('Connection', 'keep-alive');
+      responseHeaders.set('Access-Control-Allow-Origin', '*');
+      responseHeaders.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      responseHeaders.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Target-URL');
+      
+      // 复制一些重要的响应头
+      const corsHeaders = ['access-control-allow-origin', 'access-control-allow-methods', 'access-control-allow-headers'];
+      corsHeaders.forEach(header => {
+        const value = response.headers.get(header);
+        if (value) {
+          responseHeaders.set(header, value);
+        }
+      });
 
-    // 记录响应日志
-    logResponse(response.status, Object.fromEntries(responseHeaders), responseData);
+      return new NextResponse(stream, {
+        status: response.status,
+        headers: responseHeaders,
+      });
+    } else {
+      // 处理非流式响应（原有逻辑）
+      const responseData = await response.json();
+      
+      // 构建响应头
+      const responseHeaders = new Headers();
+      responseHeaders.set('Content-Type', 'application/json');
+      
+      // 复制一些重要的响应头
+      const corsHeaders = ['access-control-allow-origin', 'access-control-allow-methods', 'access-control-allow-headers'];
+      corsHeaders.forEach(header => {
+        const value = response.headers.get(header);
+        if (value) {
+          responseHeaders.set(header, value);
+        }
+      });
 
-    // 返回响应
-    return NextResponse.json(responseData, {
-      status: response.status,
-      headers: responseHeaders,
-    });
+      // 记录响应日志
+      logResponse(response.status, Object.fromEntries(responseHeaders), responseData);
+
+      // 返回响应
+      return NextResponse.json(responseData, {
+        status: response.status,
+        headers: responseHeaders,
+      });
+    }
 
   } catch (error) {
     console.error('\n=== 代理错误日志 ===');
