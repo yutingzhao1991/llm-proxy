@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     });
 
     // 检查是否是流式请求
-    if (body.stream === true) {
+    if (body.stream !== false) {
       // 处理流式响应
       const stream = await handleStreamResponse(response, body);
       
