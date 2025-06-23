@@ -1,10 +1,19 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import LogViewer from '../components/LogViewer';
 
 export default function ProxyTestPage() {
-  const [targetUrl, setTargetUrl] = useState('');
+  // 默认目标API URL
+  const DEFAULT_TARGET_URL = 'https://api.openai.com/v1/chat/completions';
+
+  // 从 localStorage 初始化
+  const [targetUrl, setTargetUrl] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('proxyTest_targetUrl') || '';
+    }
+    return '';
+  });
   const [apiKey, setApiKey] = useState('');
   const [prompt, setPrompt] = useState('Hello, how are you?');
   const [model, setModel] = useState('gpt-3.5-turbo');
@@ -14,13 +23,17 @@ export default function ProxyTestPage() {
   const [showRawData, setShowRawData] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // 记录 targetUrl 到 localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('proxyTest_targetUrl', targetUrl);
+    }
+  }, [targetUrl]);
+
   // 流式响应处理
   const testStreamingProxy = async () => {
-    if (!targetUrl) {
-      alert('请输入目标API URL');
-      return;
-    }
-
+    // 允许 targetUrl 为空，使用默认值
+    const urlToUse = targetUrl || DEFAULT_TARGET_URL;
     setLoading(true);
     setResponse('');
     
@@ -30,7 +43,7 @@ export default function ProxyTestPage() {
     try {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
-        'x-target-url': targetUrl,
+        'x-target-url': urlToUse,
       };
 
       if (apiKey) {
@@ -132,18 +145,15 @@ export default function ProxyTestPage() {
 
   // 非流式响应处理
   const testProxy = async () => {
-    if (!targetUrl) {
-      alert('请输入目标API URL');
-      return;
-    }
-
+    // 允许 targetUrl 为空，使用默认值
+    const urlToUse = targetUrl || DEFAULT_TARGET_URL;
     setLoading(true);
     setResponse('');
 
     try {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
-        'x-target-url': targetUrl,
+        'x-target-url': urlToUse,
       };
 
       if (apiKey) {
@@ -214,13 +224,13 @@ export default function ProxyTestPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    目标API URL *
+                    目标API URL
                   </label>
                   <input
                     type="text"
                     value={targetUrl}
                     onChange={(e) => setTargetUrl(e.target.value)}
-                    placeholder="https://api.openai.com/v1/chat/completions"
+                    placeholder={DEFAULT_TARGET_URL}
                     className="w-full p-2 border border-gray-300 rounded-md"
                   />
                 </div>

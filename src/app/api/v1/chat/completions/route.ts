@@ -143,8 +143,9 @@ async function handleStreamResponse(response: Response) {
 
 export async function POST(request: NextRequest) {
   try {
-    // 从环境变量或请求头获取目标API URL
-    const targetUrl = process.env.TARGET_API_URL || request.headers.get('x-target-url');
+    // 优先使用请求头 x-target-url，其次用环境变量
+    const xTargetUrl = request.headers.get('x-target-url');
+    const targetUrl = xTargetUrl || process.env.TARGET_API_URL;
     
     if (!targetUrl) {
       return NextResponse.json(
