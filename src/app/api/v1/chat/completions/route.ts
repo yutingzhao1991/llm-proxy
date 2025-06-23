@@ -79,6 +79,70 @@ function logResponse(status: number, headers: any, body: any) {
   });
 }
 
+// 解析流式响应数据，提取完整的聊天内容
+function parseStreamResponse(fullResponse: string) {
+  try {
+    const lines = fullResponse.split('\n').filter(line => line.trim());
+    let completeMessage = '';
+    let messageData: any = {};
+    
+    for (const line of lines) {
+      if (line.startsWith('data: ') && !line.includes('[DONE]')) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.choices && data.choices[0] && data.choices[0].delta) {
+            // 收集基本信息（使用第一个有效数据）
+            if (!messageData.id && data.id) {
+              messageData = {
+                id: data.id,
+                object: data.object,
+                created: data.created,
+                model: data.model,
+                choices: [{
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content: ''
+                  },
+                  finish_reason: null
+                }]
+              };
+            }
+            
+            // 收集内容
+            if (data.choices[0].delta.content) {
+              completeMessage += data.choices[0].delta.content;
+            }
+            
+            // 记录结束原因
+            if (data.choices[0].finish_reason) {
+              messageData.choices[0].finish_reason = data.choices[0].finish_reason;
+            }
+          }
+        } catch (parseError) {
+          // 忽略解析错误，继续处理下一行
+        }
+      }
+    }
+    
+    // 设置完整的消息内容
+    if (messageData.choices && messageData.choices[0]) {
+      messageData.choices[0].message.content = completeMessage;
+    }
+    
+    return messageData.id ? messageData : { 
+      content: completeMessage,
+      rawStream: fullResponse 
+    };
+  } catch (error) {
+    // 如果解析失败，返回原始数据
+    return {
+      error: '流式数据解析失败',
+      rawStream: fullResponse
+    };
+  }
+}
+
 // 处理流式响应的函数
 async function handleStreamResponse(response: Response, requestBody: any) {
   const reader = response.body?.getReader();
@@ -88,7 +152,6 @@ async function handleStreamResponse(response: Response, requestBody: any) {
 
   const decoder = new TextDecoder();
   let fullResponse = '';
-  let chunks: string[] = [];
 
   // 创建一个可读流来转发数据
   const stream = new ReadableStream({
@@ -98,19 +161,17 @@ async function handleStreamResponse(response: Response, requestBody: any) {
           const { done, value } = await reader.read();
           
           if (done) {
-            // 记录完整的响应日志
-            logResponse(response.status, Object.fromEntries(response.headers), {
-              stream: true,
-              fullResponse: fullResponse,
-              chunks: chunks
-            });
+            // 解析完整的流式响应数据
+            const parsedResponse = parseStreamResponse(fullResponse);
+            
+            // 记录整合后的完整响应日志
+            logResponse(response.status, Object.fromEntries(response.headers), parsedResponse);
             controller.close();
             break;
           }
 
           const chunk = decoder.decode(value);
           fullResponse += chunk;
-          chunks.push(chunk);
           
           // 转发数据块
           controller.enqueue(value);
