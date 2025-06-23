@@ -14,9 +14,16 @@ interface LogEntry {
 interface LogViewerProps {
   autoRefresh?: boolean;
   refreshInterval?: number;
+  className?: string;
+  height?: string;
 }
 
-export default function LogViewer({ autoRefresh = true, refreshInterval = 2000 }: LogViewerProps) {
+export default function LogViewer({ 
+  autoRefresh = true, 
+  refreshInterval = 2000,
+  className = '',
+  height = '80vh'
+}: LogViewerProps) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
@@ -108,8 +115,8 @@ export default function LogViewer({ autoRefresh = true, refreshInterval = 2000 }
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className={`flex flex-col h-${height} ${className}`} style={{ height }}>
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-xl font-semibold">代理日志监控</h2>
         <div className="flex items-center space-x-2">
           <label className="flex items-center space-x-2">
@@ -137,79 +144,81 @@ export default function LogViewer({ autoRefresh = true, refreshInterval = 2000 }
         </div>
       </div>
 
-      <div className="text-sm text-gray-600">
+      <div className="text-sm text-gray-600 mb-2">
         共 {logs.length} 条日志记录 {isAutoRefresh && `(每${refreshInterval/1000}秒自动刷新)`}
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
           <strong>错误:</strong> {error}
         </div>
       )}
 
-      <div className="space-y-2 max-h-96 overflow-y-auto">
-        {logs.length === 0 ? (
-          <div className="text-center text-gray-500 py-8">
-            暂无日志记录
-          </div>
-        ) : (
-          logs.map((log) => (
-            <div
-              key={log.id}
-              className={`border rounded-lg p-3 ${getStatusColor(log.type, log.status)}`}
-            >
-              <div 
-                className="flex items-center justify-between cursor-pointer"
-                onClick={() => toggleExpanded(log.id)}
-              >
-                <div className="flex items-center space-x-3">
-                  <span className="font-medium">
-                    {log.type === 'request' ? '📤 请求' : '📥 响应'}
-                  </span>
-                  {log.method && (
-                    <span className="text-xs bg-white bg-opacity-50 px-2 py-1 rounded">
-                      {log.method}
-                    </span>
-                  )}
-                  {log.status && (
-                    <span className="text-xs bg-white bg-opacity-50 px-2 py-1 rounded">
-                      {log.status}
-                    </span>
-                  )}
-                  <span className="text-xs text-gray-600">
-                    {formatTime(log.timestamp)}
-                  </span>
-                </div>
-                <span className="text-sm">
-                  {expandedLogId === log.id ? '🔽' : '▶️'}
-                </span>
-              </div>
-
-              {log.url && (
-                <div className="mt-1 text-xs text-gray-700 truncate">
-                  {log.url}
-                </div>
-              )}
-
-              {expandedLogId === log.id && (
-                <div className="mt-3 space-y-2 text-xs">
-                  <div>
-                    <strong>请求头:</strong>
-                    <pre className="mt-1 bg-white bg-opacity-50 p-2 rounded overflow-x-auto">
-                      {JSON.stringify(log.headers, null, 2)}
-                    </pre>
-                  </div>
-                  <div>
-                    <strong>内容:</strong>
-                    <pre className="mt-1 bg-white bg-opacity-50 p-2 rounded overflow-x-auto max-h-40 overflow-y-auto">
-                      {JSON.stringify(log.body, null, 2)}
-                    </pre>
-                  </div>
-                </div>
-              )}
+      <div className="flex-grow overflow-y-auto">
+        <div className="space-y-2">
+          {logs.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">
+              暂无日志记录
             </div>
-          ))
-        )}
+          ) : (
+            logs.map((log) => (
+              <div
+                key={log.id}
+                className={`border rounded-lg p-3 ${getStatusColor(log.type, log.status)}`}
+              >
+                <div 
+                  className="flex items-center justify-between cursor-pointer"
+                  onClick={() => toggleExpanded(log.id)}
+                >
+                  <div className="flex items-center space-x-3">
+                    <span className="font-medium">
+                      {log.type === 'request' ? '📤 请求' : '📥 响应'}
+                    </span>
+                    {log.method && (
+                      <span className="text-xs bg-white bg-opacity-50 px-2 py-1 rounded">
+                        {log.method}
+                      </span>
+                    )}
+                    {log.status && (
+                      <span className="text-xs bg-white bg-opacity-50 px-2 py-1 rounded">
+                        {log.status}
+                      </span>
+                    )}
+                    <span className="text-xs text-gray-600">
+                      {formatTime(log.timestamp)}
+                    </span>
+                  </div>
+                  <span className="text-sm">
+                    {expandedLogId === log.id ? '🔽' : '▶️'}
+                  </span>
+                </div>
+
+                {log.url && (
+                  <div className="mt-1 text-xs text-gray-700 truncate">
+                    {log.url}
+                  </div>
+                )}
+
+                {expandedLogId === log.id && (
+                  <div className="mt-3 space-y-2 text-xs">
+                    <div>
+                      <strong>请求头:</strong>
+                      <pre className="mt-1 bg-white bg-opacity-50 p-2 rounded overflow-x-auto">
+                        {JSON.stringify(log.headers, null, 2)}
+                      </pre>
+                    </div>
+                    <div>
+                      <strong>内容:</strong>
+                      <pre className="mt-1 bg-white bg-opacity-50 p-2 rounded overflow-x-auto max-h-40 overflow-y-auto">
+                        {JSON.stringify(log.body, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

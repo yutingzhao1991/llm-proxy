@@ -157,6 +157,8 @@ async function handleStreamResponse(response: Response, requestBody: any) {
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        let controllerClosed = false;
+        
         while (true) {
           const { done, value } = await reader.read();
           
@@ -166,15 +168,30 @@ async function handleStreamResponse(response: Response, requestBody: any) {
             
             // 记录整合后的完整响应日志
             logResponse(response.status, Object.fromEntries(response.headers), parsedResponse);
-            controller.close();
+            
+            if (!controllerClosed) {
+              controller.close();
+              controllerClosed = true;
+            }
             break;
           }
 
           const chunk = decoder.decode(value);
           fullResponse += chunk;
           
-          // 转发数据块
-          controller.enqueue(value);
+          // 转发数据块，确保controller未关闭
+          if (!controllerClosed) {
+            try {
+              controller.enqueue(value);
+            } catch (enqueueError: any) {
+              if (enqueueError.code === 'ERR_INVALID_STATE') {
+                controllerClosed = true;
+                console.log('Controller已关闭，但继续收集完整响应');
+              } else {
+                throw enqueueError;
+              }
+            }
+          }
         }
       } catch (error) {
         console.error('流式处理错误:', error);
