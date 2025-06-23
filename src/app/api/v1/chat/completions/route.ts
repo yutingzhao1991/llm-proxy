@@ -16,6 +16,16 @@ interface FunctionCall {
   arguments: string;
 }
 
+// 定义流式工具调用类型（用于解析delta中的tool_calls）
+interface DeltaToolCall {
+  index?: number;
+  id?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
 // 定义消息数据类型
 interface MessageData {
   id?: string;
@@ -75,7 +85,7 @@ function parseStreamResponse(fullResponse: string) {
             
             // 处理工具调用 (新格式)
             if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
-              delta.tool_calls.forEach((toolCall: any) => {
+              delta.tool_calls.forEach((toolCall: DeltaToolCall) => {
                 if (!toolCall.index && toolCall.index !== 0) return;
                 
                 const toolCallId = toolCall.id || `tool_call_${toolCall.index}`;
