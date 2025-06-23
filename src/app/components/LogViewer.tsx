@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 interface LogEntry {
   id: string;
@@ -188,9 +189,20 @@ export default function LogViewer({
                       {formatTime(log.timestamp)}
                     </span>
                   </div>
-                  <span className="text-sm">
-                    {expandedLogId === log.id ? '🔽' : '▶️'}
-                  </span>
+                  <div className="flex items-center space-x-2">
+                    <Link 
+                      href={`/log-detail/${log.id}`}
+                      className="text-xs bg-white bg-opacity-70 px-2 py-1 rounded hover:bg-opacity-100"
+                      onClick={(e) => e.stopPropagation()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      查看详情
+                    </Link>
+                    <span className="text-sm">
+                      {expandedLogId === log.id ? '🔽' : '▶️'}
+                    </span>
+                  </div>
                 </div>
 
                 {log.url && (

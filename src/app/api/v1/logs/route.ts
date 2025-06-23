@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLogs, clearLogs } from '../chat/completions/route';
 
+// 根据ID获取日志
+export function getLogById(id: string) {
+  const logs = getLogs();
+  return logs.find(log => log.id === id) || null;
+}
+
 // 获取日志
 export async function GET(request: NextRequest) {
   try {
