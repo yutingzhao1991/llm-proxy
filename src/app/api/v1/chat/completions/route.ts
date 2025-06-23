@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logRequest, logResponse } from '@/lib/logger';
 
+// 定义工具调用相关类型
+interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+interface FunctionCall {
+  name: string;
+  arguments: string;
+}
+
 // 定义消息数据类型
 interface MessageData {
   id?: string;
@@ -11,24 +26,30 @@ interface MessageData {
     index: number;
     message: {
       role: string;
-      content: string;
+      content: string | null;
+      tool_calls?: ToolCall[];
+      function_call?: FunctionCall;
     };
     finish_reason: string | null;
   }>;
 }
 
-// 解析流式响应数据，提取完整的聊天内容
+// 解析流式响应数据，提取完整的聊天内容和工具调用
 function parseStreamResponse(fullResponse: string) {
   try {
     const lines = fullResponse.split('\n').filter(line => line.trim());
     let completeMessage = '';
     let messageData: MessageData = {};
+    const toolCallsMap = new Map<string, ToolCall>();
+    let functionCall: FunctionCall | null = null;
     
     for (const line of lines) {
       if (line.startsWith('data: ') && !line.includes('[DONE]')) {
         try {
           const data = JSON.parse(line.slice(6));
           if (data.choices && data.choices[0] && data.choices[0].delta) {
+            const delta = data.choices[0].delta;
+            
             // 收集基本信息（使用第一个有效数据）
             if (!messageData.id && data.id) {
               messageData = {
@@ -40,7 +61,7 @@ function parseStreamResponse(fullResponse: string) {
                   index: 0,
                   message: {
                     role: 'assistant',
-                    content: ''
+                    content: null
                   },
                   finish_reason: null
                 }]
@@ -48,8 +69,63 @@ function parseStreamResponse(fullResponse: string) {
             }
             
             // 收集内容
-            if (data.choices[0].delta.content) {
-              completeMessage += data.choices[0].delta.content;
+            if (delta.content) {
+              completeMessage += delta.content;
+            }
+            
+            // 处理工具调用 (新格式)
+            if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
+              delta.tool_calls.forEach((toolCall: any) => {
+                if (!toolCall.index && toolCall.index !== 0) return;
+                
+                const toolCallId = toolCall.id || `tool_call_${toolCall.index}`;
+                
+                if (!toolCallsMap.has(toolCallId)) {
+                  toolCallsMap.set(toolCallId, {
+                    id: toolCallId,
+                    type: 'function',
+                    function: {
+                      name: '',
+                      arguments: ''
+                    }
+                  });
+                }
+                
+                const existingToolCall = toolCallsMap.get(toolCallId)!;
+                
+                if (toolCall.function) {
+                  if (toolCall.function.name) {
+                    existingToolCall.function.name += toolCall.function.name;
+                  }
+                  if (toolCall.function.arguments) {
+                    existingToolCall.function.arguments += toolCall.function.arguments;
+                  }
+                }
+                
+                // 更新ID（如果提供了新的ID）
+                if (toolCall.id && toolCall.id !== toolCallId) {
+                  const updatedToolCall = { ...existingToolCall, id: toolCall.id };
+                  toolCallsMap.delete(toolCallId);
+                  toolCallsMap.set(toolCall.id, updatedToolCall);
+                }
+              });
+            }
+            
+            // 处理函数调用 (旧格式)
+            if (delta.function_call) {
+              if (!functionCall) {
+                functionCall = {
+                  name: '',
+                  arguments: ''
+                };
+              }
+              
+              if (delta.function_call.name) {
+                functionCall.name += delta.function_call.name;
+              }
+              if (delta.function_call.arguments) {
+                functionCall.arguments += delta.function_call.arguments;
+              }
             }
             
             // 记录结束原因
@@ -63,13 +139,25 @@ function parseStreamResponse(fullResponse: string) {
       }
     }
     
-    // 设置完整的消息内容
+    // 设置完整的消息内容和工具调用
     if (messageData.choices && messageData.choices[0]) {
-      messageData.choices[0].message.content = completeMessage;
+      messageData.choices[0].message.content = completeMessage || null;
+      
+      // 添加工具调用
+      if (toolCallsMap.size > 0) {
+        messageData.choices[0].message.tool_calls = Array.from(toolCallsMap.values());
+      }
+      
+      // 添加函数调用（旧格式）
+      if (functionCall && (functionCall.name || functionCall.arguments)) {
+        messageData.choices[0].message.function_call = functionCall;
+      }
     }
     
     return messageData.id ? messageData : { 
       content: completeMessage,
+      tool_calls: toolCallsMap.size > 0 ? Array.from(toolCallsMap.values()) : undefined,
+      function_call: functionCall || undefined,
       rawStream: fullResponse 
     };
   } catch {
