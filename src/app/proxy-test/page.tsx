@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import LogViewer from '../components/LogViewer';
 
 export default function ProxyTestPage() {
   const [targetUrl, setTargetUrl] = useState('');
@@ -357,6 +358,11 @@ DEFAULT_API_KEY=your_api_key_here`}
           <li>✅ 兼容 OpenAI 流式 API 格式</li>
           <li>✅ 自动检测流式/非流式模式</li>
         </ul>
+      </div>
+
+      {/* 日志监控组件 */}
+      <div className="bg-gray-50 p-4 rounded-lg">
+        <LogViewer autoRefresh={true} refreshInterval={3000} />
       </div>
     </div>
   );
