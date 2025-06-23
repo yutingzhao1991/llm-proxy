@@ -8,8 +8,8 @@ interface LogEntry {
   method?: string;
   url?: string;
   status?: number;
-  headers: any;
-  body: any;
+  headers: Record<string, unknown>;
+  body: unknown;
 }
 
 interface LogViewerProps {

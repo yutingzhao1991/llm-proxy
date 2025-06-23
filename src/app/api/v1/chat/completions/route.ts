@@ -1,82 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logRequest, logResponse } from '@/lib/logger';
 
-// 日志存储接口
-interface LogEntry {
-  id: string;
-  timestamp: string;
-  type: 'request' | 'response';
-  method?: string;
-  url?: string;
-  status?: number;
-  headers: any;
-  body: any;
-}
-
-// 内存日志存储（最多保存100条记录）
-const logs: LogEntry[] = [];
-const MAX_LOGS = 100;
-
-// 添加日志到内存存储
-function addLogEntry(entry: Omit<LogEntry, 'id' | 'timestamp'>) {
-  const logEntry: LogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-    timestamp: new Date().toISOString(),
-    ...entry
-  };
-  
-  logs.unshift(logEntry); // 新日志添加到前面
-  
-  // 限制日志数量
-  if (logs.length > MAX_LOGS) {
-    logs.splice(MAX_LOGS);
-  }
-}
-
-// 获取所有日志
-export function getLogs(): LogEntry[] {
-  return [...logs];
-}
-
-// 清空日志
-export function clearLogs(): void {
-  logs.splice(0, logs.length);
-}
-
-// 日志工具函数
-function logRequest(method: string, url: string, headers: any, body: any) {
-  console.log('\n=== 代理请求日志 ===');
-  console.log(`时间: ${new Date().toISOString()}`);
-  console.log(`方法: ${method}`);
-  console.log(`URL: ${url}`);
-  console.log('请求头:', JSON.stringify(headers, null, 2));
-  console.log('请求体:', JSON.stringify(body, null, 2));
-  console.log('==================\n');
-
-  // 添加到内存存储
-  addLogEntry({
-    type: 'request',
-    method,
-    url,
-    headers,
-    body
-  });
-}
-
-function logResponse(status: number, headers: any, body: any) {
-  console.log('\n=== 代理响应日志 ===');
-  console.log(`时间: ${new Date().toISOString()}`);
-  console.log(`状态码: ${status}`);
-  console.log('响应头:', JSON.stringify(headers, null, 2));
-  console.log('响应体:', JSON.stringify(body, null, 2));
-  console.log('==================\n');
-
-  // 添加到内存存储
-  addLogEntry({
-    type: 'response',
-    status,
-    headers,
-    body
-  });
+// 定义消息数据类型
+interface MessageData {
+  id?: string;
+  object?: string;
+  created?: number;
+  model?: string;
+  choices?: Array<{
+    index: number;
+    message: {
+      role: string;
+      content: string;
+    };
+    finish_reason: string | null;
+  }>;
 }
 
 // 解析流式响应数据，提取完整的聊天内容
@@ -84,7 +22,7 @@ function parseStreamResponse(fullResponse: string) {
   try {
     const lines = fullResponse.split('\n').filter(line => line.trim());
     let completeMessage = '';
-    let messageData: any = {};
+    let messageData: MessageData = {};
     
     for (const line of lines) {
       if (line.startsWith('data: ') && !line.includes('[DONE]')) {
@@ -115,11 +53,11 @@ function parseStreamResponse(fullResponse: string) {
             }
             
             // 记录结束原因
-            if (data.choices[0].finish_reason) {
+            if (data.choices[0].finish_reason && messageData.choices && messageData.choices[0]) {
               messageData.choices[0].finish_reason = data.choices[0].finish_reason;
             }
           }
-        } catch (parseError) {
+        } catch {
           // 忽略解析错误，继续处理下一行
         }
       }
@@ -134,7 +72,7 @@ function parseStreamResponse(fullResponse: string) {
       content: completeMessage,
       rawStream: fullResponse 
     };
-  } catch (error) {
+  } catch {
     // 如果解析失败，返回原始数据
     return {
       error: '流式数据解析失败',
@@ -144,7 +82,7 @@ function parseStreamResponse(fullResponse: string) {
 }
 
 // 处理流式响应的函数
-async function handleStreamResponse(response: Response, requestBody: any) {
+async function handleStreamResponse(response: Response) {
   const reader = response.body?.getReader();
   if (!reader) {
     throw new Error('无法读取响应流');
@@ -183,8 +121,8 @@ async function handleStreamResponse(response: Response, requestBody: any) {
           if (!controllerClosed) {
             try {
               controller.enqueue(value);
-            } catch (enqueueError: any) {
-              if (enqueueError.code === 'ERR_INVALID_STATE') {
+            } catch (enqueueError: unknown) {
+              if (enqueueError instanceof Error && enqueueError.message.includes('ERR_INVALID_STATE')) {
                 controllerClosed = true;
                 console.log('Controller已关闭，但继续收集完整响应');
               } else {
@@ -247,7 +185,7 @@ export async function POST(request: NextRequest) {
     // 检查是否是流式请求
     if (body.stream === true) {
       // 处理流式响应
-      const stream = await handleStreamResponse(response, body);
+      const stream = await handleStreamResponse(response);
       
       // 构建流式响应头
       const responseHeaders = new Headers();
@@ -315,7 +253,7 @@ export async function POST(request: NextRequest) {
 }
 
 // 支持OPTIONS请求（CORS预检）
-export async function OPTIONS(request: NextRequest) {
+export async function OPTIONS() {
   return NextResponse.json({}, {
     status: 200,
     headers: {

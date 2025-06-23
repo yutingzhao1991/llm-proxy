@@ -8,7 +8,7 @@ interface Message {
   role?: string;
   content: string;
   name?: string;
-  function_call?: any;
+  function_call?: Record<string, unknown>;
 }
 
 interface LogEntry {
@@ -18,8 +18,8 @@ interface LogEntry {
   method?: string;
   url?: string;
   status?: number;
-  headers: any;
-  body: any;
+  headers: Record<string, unknown>;
+  body: unknown;
 }
 
 export default function LogDetailPage() {
@@ -54,7 +54,7 @@ export default function LogDetailPage() {
             
             // 响应中的 messages
             if (result.data.type === 'response' && result.data.body.choices) {
-              result.data.body.choices.forEach((choice: any) => {
+              result.data.body.choices.forEach((choice: { message?: Message }) => {
                 if (choice.message) {
                   extractedMessages.push(choice.message);
                 }

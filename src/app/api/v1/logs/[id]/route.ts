@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLogById } from '@/app/api/v1/logs/route';
+import { getLogById } from '@/lib/logger';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = params.id;
-    const log = await getLogById(id);
+    const { id } = await params;
+    const log = getLogById(id);
     
     if (!log) {
       return NextResponse.json({ 

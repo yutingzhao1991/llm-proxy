@@ -119,11 +119,11 @@ export default function ProxyTestPage() {
         setResponse(fullResponse);
       }
 
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'AbortError') {
         setResponse(prev => prev + '\n\n[请求已取消]');
       } else {
-        setResponse(`错误: ${error.message || error}`);
+        setResponse(`错误: ${error instanceof Error ? error.message : String(error)}`);
       }
     } finally {
       setLoading(false);

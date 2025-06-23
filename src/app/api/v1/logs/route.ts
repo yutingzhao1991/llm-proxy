@@ -1,14 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getLogs, clearLogs } from '../chat/completions/route';
-
-// 根据ID获取日志
-export function getLogById(id: string) {
-  const logs = getLogs();
-  return logs.find(log => log.id === id) || null;
-}
+import { NextResponse } from 'next/server';
+import { getLogs, clearLogs } from '@/lib/logger';
 
 // 获取日志
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const logs = getLogs();
     return NextResponse.json({
@@ -30,7 +24,7 @@ export async function GET(request: NextRequest) {
 }
 
 // 清空日志
-export async function DELETE(request: NextRequest) {
+export async function DELETE() {
   try {
     clearLogs();
     return NextResponse.json({
@@ -51,7 +45,7 @@ export async function DELETE(request: NextRequest) {
 }
 
 // 支持OPTIONS请求（CORS预检）
-export async function OPTIONS(request: NextRequest) {
+export async function OPTIONS() {
   return NextResponse.json({}, {
     status: 200,
     headers: {
